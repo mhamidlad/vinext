@@ -341,6 +341,15 @@ export function parseImageParams(
   // Prevent open redirect / SSRF — only allow path-relative URLs.
   // Normalize backslashes to forward slashes first: browsers and the URL
   // constructor treat /\evil.com as protocol-relative (//evil.com).
+  // A leading backslash must be rejected *before* normalization: the WHATWG
+  // URL parser treats a leading "\" as a path separator for special schemes,
+  // so "\evil.example\img.png" resolves to the off-site origin
+  // "https://evil.example/img.png" even though, after normalization, it looks
+  // like the local path "/evil.example/img.png" (see cloudflare/vinext#3767,
+  // which tracks the upstream Next.js Image Optimization SSRF fix).
+  if (imageUrl.startsWith("\\")) {
+    return null;
+  }
   const normalizedUrl = imageUrl.replaceAll("\\", "/");
   // The URL must start with "/" (but not "//") to be a valid relative path.
   // This blocks absolute URLs (http://, https://), protocol-relative (//),

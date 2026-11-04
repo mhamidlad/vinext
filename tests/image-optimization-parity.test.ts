@@ -230,6 +230,43 @@ describe("dot-segment image source parity", () => {
   });
 });
 
+// The optimizer only serves local sources: an image URL that is absolute,
+// protocol-relative, backslash-shaped, or uses an exotic scheme must never be
+// accepted as a fetch target. This is the SSRF boundary for `/_next/image` —
+// hosts fetch the source through the application itself, so any form that
+// could resolve to an off-site origin is rejected (see
+// cloudflare/vinext#3767, which tracks the upstream Image Optimization SSRF
+// fix in Next.js 16.3.8).
+describe("absolute and protocol-relative image source rejection", () => {
+  it("rejects absolute, protocol-relative, and exotic-scheme sources", async () => {
+    const { parseImageParams } =
+      await import("../packages/vinext/src/server/image-optimization.js");
+    const parse = (source: string) => {
+      const requestUrl = new URL("http://vinext.test/_next/image");
+      requestUrl.searchParams.set("url", source);
+      requestUrl.searchParams.set("w", "64");
+      requestUrl.searchParams.set("q", "75");
+      return parseImageParams(requestUrl);
+    };
+    for (const source of [
+      // Absolute URLs (http/https) must not be fetched.
+      "https://evil.example/img.png",
+      "http://evil.example/img.png",
+      // Protocol-relative and backslash variants.
+      "//evil.example/img.png",
+      "/\\evil.example/img.png",
+      "\\evil.example\\img.png",
+      // Exotic schemes must not be accepted either.
+      "data:text/plain;base64,SGVsbG8=",
+      "javascript:alert(1)",
+    ]) {
+      expect(parse(source), source).toBeNull();
+    }
+    // A plain local path remains acceptable.
+    expect(parse("/heart.png")).not.toBeNull();
+  });
+});
+
 // Verified against Next.js 16.2.7 `next start`: validateParams answers 400
 // (`"url" parameter is not allowed`) for a local source outside
 // `images.localPatterns`, matching the resolved URL, and an unset list allows
